@@ -47,7 +47,7 @@ def log_likelihood_normal(mu, logvar, z): # Implemented
     variance = torch.sum(logvar, dim=1)
 
     # Term 3: (z - mu)^2 / (var)
-    sq_term  = torch.sum(((z - mu) ** 2) * torch.exp(-logvar), dim=1)
+    sq_term  = torch.sum((z - mu).pow(2) * torch.exp(-logvar), dim=1)
 
     # Log likelihood of normal distribution
     ll_normal = -0.5 * (c + variance + sq_term )
@@ -83,7 +83,7 @@ def kl_gaussian_gaussian_analytic(mu_q, logvar_q, mu_p, logvar_p): # Implemented
     logvar_p = logvar_p.view(batch_size, -1)
 
     t1 = logvar_p - logvar_q
-    t2 = (torch.exp(logvar_q) + (mu_q - mu_p) ** 2) / torch.exp(logvar_p)
+    t2 = (torch.exp(logvar_q) + (mu_q - mu_p).pow(2)) / torch.exp(logvar_p)
 
     # Sum over the input size
     kl_gg = 0.5 * (t1 + t2 - 1).sum(dim=1)
