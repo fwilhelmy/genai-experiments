@@ -19,48 +19,71 @@ class DenoiseDiffusion():
         c_ = c.gather(-1, t)
         return c_.reshape(-1, 1, 1, 1)
 
-    ### FORWARD SAMPLING
+    # Forward distribution q(x_t | x_0)
     def q_xt_x0(self, x0: torch.Tensor, t: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        # TODO: return mean and variance of q(x_t|x_0)
-        raise NotImplementedError
+        alpha_bar_t = self.gather(self.alpha_bar, t)
+
+        mean = x0 * alpha_bar_t.sqrt()
+        var = 1.0 - alpha_bar_t
 
         return mean, var
 
+    # Sampling from q(x_t | x_0)
     def q_sample(self, x0: torch.Tensor, t: torch.Tensor, eps: Optional[torch.Tensor] = None):
         if eps is None:
             eps = torch.randn_like(x0)
-        # TODO: return x_t sampled from q(•|x_0) according to (1)
-        raise NotImplementedError
+        
+        mean, var = self.q_xt_x0(x0, t)
+        sample = mean + var.sqrt() * eps
 
         return sample
 
-    ### REVERSE SAMPLING
+    # Reverse distribution p(x_{t-1} | x_t)
     def p_xt_prev_xt(self, xt: torch.Tensor, t: torch.Tensor):
-        # TODO: return mean and variance of p_theta(x_{t-1} | x_t) according to (2)
-        raise NotImplementedError
+        # Unrolling the parameters (B,1,1,1)
+        beta_t = self.gather(self.beta, t)
+        alpha_t = self.gather(self.alpha, t)
+        alpha_bar_t = self.gather(self.alpha_bar, t)
+
+        # Predicting the noise
+        estimated_noise = self.eps_model(xt, t)
+
+        # Reversing the diffusion process (atleast trying to)
+        estimated_x0 = xt - (beta_t / (1 - alpha_bar_t).sqrt()) * estimated_noise
+
+        # Posterior mean
+        mu_theta = 1/alpha_t.sqrt() * estimated_x0
+
+        # Posterior variance
+        var = beta_t
+        
         return mu_theta, var
 
-    # TODO: sample x_{t-1} from p_theta(•|x_t) according to (3)
+    # Sampling from p(x_{t-1} | x_t)
     def p_sample(self, xt: torch.Tensor, t: torch.Tensor, set_seed=False):
         if set_seed:
             torch.manual_seed(42)
-        raise NotImplementedError
+        
+        mu_theta, var = self.p_xt_prev_xt(xt, t)
+        eps = torch.randn_like(xt)
+        sample = mu_theta + var.sqrt() * eps
 
         return sample
 
-    ### LOSS
-    # TODO: compute loss according to (4)
     def loss(self, x0: torch.Tensor, noise: Optional[torch.Tensor] = None, set_seed=False):
         if set_seed:
             torch.manual_seed(42)
         batch_size = x0.shape[0]
         dim = list(range(1, x0.ndim))
-        t = torch.randint(
-            0, self.n_steps, (batch_size,), device=x0.device, dtype=torch.long
-        )
+        t = torch.randint(0, self.n_steps, (batch_size,), device=x0.device, dtype=torch.long)
         if noise is None:
             noise = torch.randn_like(x0)
-        # TODO
-        raise NotImplementedError
+        
+        # Sample forward diffusion and estimate noise
+        xt = self.q_sample(x0, t, eps=noise)
+        estimated_noise = self.eps_model(xt, t)
+
+        # Compute the loss
+        loss = (estimated_noise - noise).pow(2).mean()
 
         return loss

@@ -114,7 +114,6 @@ class Trainer:
             n_steps = self.args.n_steps
             
         with torch.no_grad():
-            # $x_T \sim p(x_T) = \mathcal{N}(x_T; \mathbf{0}, \mathbf{I})$
             x = torch.randn(
                 [
                     self.args.n_samples,
@@ -124,22 +123,19 @@ class Trainer:
                 ],
                 device=self.args.device,
             )
-            if self.args.nb_save is not None:
-                saving_steps = [self.args["n_steps"] - 1]
-            # Remove noise for $T$ steps
-            for t_ in tqdm(range(n_steps)):
-                
-                # TODO: Sample x_t 
-                raise NotImplementedError
             
-                if self.args.nb_save is not None and t_ in saving_steps:
-                    print(f"Showing/saving samples from epoch {self.current_epoch}")
-                    self.show_save(
-                        x,
-                        show=True,
-                        save=True,
-                        file_name=f"DDPM_epoch_{self.current_epoch}_sample_{t_}.png",
-                    )
+            saving_steps = [n_steps - 1] if self.args.nb_save is not None else []
+
+            # Loop from t = T-1 down to 0
+            for T in tqdm(reversed(range(n_steps)), desc="Sampling"):
+                t = torch.full((self.args.n_samples,), T, device=self.args.device, dtype=torch.long)
+
+                x = self.diffusion.p_sample(x, t)            
+            
+                if self.args.nb_save is not None and T in saving_steps:
+                    print(f"Saving samples from epoch t={self.current_epoch}")
+                    self.show_save(x, show=True, save=True,
+                        file_name=f"DDPM_epoch_{self.current_epoch}_sample_{T}.png")
         return x
 
     def save_model(self):
@@ -178,27 +174,28 @@ class Trainer:
         Returns:
             List of tensors representing the images at different steps
         """
-        
         if set_seed:
             torch.manual_seed(42)
-        
         if n_steps is None:
             n_steps = args.n_steps
-            
-        # Start from random noise
-        x = torch.randn(n_samples, 1, img_size, img_size, device=args.device, requires_grad=False)
 
-        # Store images at each step we want to show
-        images = []
-        images.append(x.detach().cpu().numpy())  # Initial noise
-
-        for step in tqdm(range(1, n_steps+1, 1)):
-            # TODO: Generate intermediate steps
-            # Hint: if GPU crashes, it might be because you accumulate unused gradient ... don't forget to remove gradient
-            raise NotImplementedError
         
-            # Store intermediate result if it's a step we want to display
-            if step in steps_to_show:
-                images.append(x.detach().cpu().numpy())
+        with torch.no_grad():
+            # Start from random noise
+            x = torch.randn(n_samples, 1, img_size, img_size, device=args.device, requires_grad=False)
+
+            images = []
+            images.append(x.detach().cpu().numpy())  # Initial noise
+
+            # Loop from t = T-1 down to 0
+            # Hint: if GPU crashes, it might be because you accumulate unused gradient ... don't forget to remove gradient
+            for T in tqdm(reversed(range(n_steps)), desc="Intermediate sampling"):
+                t = torch.full((n_samples,), T, device=args.device, dtype=torch.long)
+
+                x = self.diffusion.p_sample(x, t)
+
+                # Store intermediate result if it's a step we want to display
+                if T in steps_to_show:
+                    images.append(x.detach().cpu().numpy())
 
         return images
