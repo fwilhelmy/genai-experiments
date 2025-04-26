@@ -176,7 +176,7 @@ class Trainer:
 
         plt.tight_layout()
         if save:
-            plt.savefig('images/' + file_name)
+            plt.savefig('results/experiment2/images/' + file_name)
         if show:
             plt.show()
         plt.close(fig)

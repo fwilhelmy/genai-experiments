@@ -14,7 +14,7 @@ args = {
     "device": "cuda" if torch.cuda.is_available() else "cpu",  # Device
     "fp16_precision": True,
     "show_every_n_epochs": 2,
-    "MODEL_PATH": os.getcwd() + "/eps_model.pkl",
+    "MODEL_PATH": "results/experiment3/eps_model.pkl",
     "save_every_n_epochs": 2
 }
 args = EasyDict(args)

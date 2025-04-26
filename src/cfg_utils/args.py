@@ -14,7 +14,7 @@ args = {
     "device": "cuda" if torch.cuda.is_available() else "mps" if torch.mps.is_available() else "cpu",  # Device
     "fp16_precision": True,
     "show_every_n_epochs": 2,
-    "MODEL_PATH": os.getcwd() + "/eps_model_cfg.pkl",
+    "MODEL_PATH": "results/experiment2/eps_model_cfg.pkl",
     "save_every_n_epochs": 2,
     "cfg_scale": 0.3
 }

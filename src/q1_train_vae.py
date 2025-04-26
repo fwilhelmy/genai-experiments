@@ -105,15 +105,10 @@ def train(epoch):
           epoch, train_loss / len(train_loader.dataset)))
 
 def experiment1():
-    model.train()
     for epoch in range(1, args.epochs + 1):
         train(epoch)
 
-    torch.save(model.state_dict(), 'vae.pth')
-    # TODO
+    torch.save(model, 'results/experiment1/model.pt')
 
 if __name__ == "__main__":
-    for epoch in range(1, args.epochs + 1):
-        train(epoch)
-
-    torch.save(model, 'model.pt')
+    experiment1()
