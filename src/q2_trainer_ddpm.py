@@ -129,12 +129,12 @@ class Trainer:
             for curr_t in tqdm(reversed(range(n_steps)), desc="Sampling"):
                 t = torch.full((self.args.n_samples,), curr_t, device=self.args.device, dtype=torch.long)
                 x = self.diffusion.p_sample(x, t)
-                if self.args.nb_save is not None and curr_t in saving_steps:
-                    print(f"Showing/saving samples from epoch {self.current_epoch}")
-                    self.show_save(
-                        x, show=False, save=True,
-                        file_name=f"DDPM_epoch_{self.current_epoch}_sample_{curr_t}.png"
-                    )
+        if self.args.nb_save is not None and curr_t in saving_steps:
+            print(f"Showing/saving samples from epoch {self.current_epoch}")
+            self.show_save(
+                x, show=False, save=True,
+                file_name=f"DDPM_epoch_{self.current_epoch}.png"
+            )
         return x
 
     def save_model(self):
@@ -187,15 +187,16 @@ class Trainer:
             n_steps = args.n_steps
         x = torch.randn(n_samples, 1, img_size, img_size, device=args.device, requires_grad=False)
         images = [x.detach().cpu().numpy()]
-        for step in tqdm(range(1, n_steps+1)):
+        for step in tqdm(range(1, n_steps-1), desc="Sampling"):
             t = torch.full((n_samples,), step, device=self.args.device, dtype=torch.long)
             x = self.diffusion.p_sample(x, t)
             if step in steps_to_show:
                 images.append(x.detach().cpu().numpy())
         return images
 
-def experiment2(training=True):
-    eps_model = UNet(c_in=1,c_out=1)
+def experiment2(train: bool = True, checkpoint_epoch: int = None):
+    # instantiate and (optionally) pre-load your base model
+    eps_model = UNet(c_in=1, c_out=1)
     eps_model = load_weights(eps_model, args.MODEL_PATH)
 
     diffusion_model = DenoiseDiffusion(
@@ -215,12 +216,23 @@ def experiment2(training=True):
         pin_memory=True,
     )
 
-    if training:
-        trainer.train(dataloader)
-    else:
-        trainer.load_model(args.MODEL_PATH)
+    if not train:
+        # default to last epoch if none specified
+        epoch_to_load = checkpoint_epoch if checkpoint_epoch is not None else args.epochs - 1
+        ckpt_path = os.path.join(
+            CHECKPOINT_DIR,
+            f"ddpm_epoch_{epoch_to_load:03d}.pt"
+        )
+        if not os.path.isfile(ckpt_path):
+            raise FileNotFoundError(f"No checkpoint found at {ckpt_path}")
 
-    return trainer.eps_model, trainer.optimizer
+        trainer.load_model(ckpt_path)
+        print(f"[Checkpoint] Loaded model at epoch {trainer.current_epoch} from {ckpt_path}")
+        return trainer
+
+    # otherwise, run training as before
+    trainer.train(dataloader)
+    return trainer
 
 if __name__ == "__main__":
     experiment2()

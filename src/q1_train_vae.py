@@ -83,6 +83,39 @@ def validate_epoch(model, loader, device):
     return total / len(loader.dataset)
 
 # -------------------------------------------------------------------
+# Image generation function
+# -------------------------------------------------------------------
+
+def generate_images(model, num_images: int = 64, device: torch.device = None) -> torch.Tensor:
+    """
+    Sample `num_images` from N(0,I) and decode them with a trained VAE.
+
+    Args:
+        model (nn.Module): trained VAE instance (with `decode(z)`).
+        num_images (int): how many images to generate.
+        device (torch.device, optional): where to run the sampling. 
+            If None, inferred from model parameters.
+    Returns:
+        Tensor of shape (num_images, 1, 28, 28) with values in [0,1].
+    """
+    model.eval()
+    # infer device if not provided
+    if device is None:
+        device = next(model.parameters()).device
+    model.to(device)
+
+    with torch.no_grad():
+        # latent_dim = 20 for your VAE (fc21 out_features)
+        latent_dim = model.fc21.out_features
+        # sample from standard normal prior
+        z = torch.randn(num_images, latent_dim, device=device)
+        # decode and reshape
+        recon_flat = model.decode(z)                     # (num_images, 784)
+        images = recon_flat.view(num_images, 1, 28, 28)   # (num_images,1,28,28)
+
+    return images
+
+# -------------------------------------------------------------------
 # Main experiment
 # -------------------------------------------------------------------
 def experiment1(train: bool = True):

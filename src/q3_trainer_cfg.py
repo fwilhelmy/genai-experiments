@@ -91,8 +91,7 @@ class Trainer:
                 scaler.scale(loss).backward()
                 scaler.step(self.optimizer)
                 scaler.update()
-                loss.backward()
-                self.optimizer.step()
+
                 self.ema.step_ema(self.ema_model, self.eps_model)
 
                 running_loss += loss.item()
@@ -131,7 +130,7 @@ class Trainer:
             json.dump(self.loss_per_iter, jf)
         print(f"[Training Complete] loss history saved to {loss_json}")
 
-    def sample(self, labels=None, cfg_scale=3., n_steps=None, set_seed=False):
+    def sample(self, labels=None, cfg_scale=3., n_steps=None, set_seed=False, show=False, save=True):
         if set_seed:
             torch.manual_seed(42)
         if n_steps is None:
@@ -155,7 +154,7 @@ class Trainer:
             if self.args.nb_save is not None:
                 saving_steps = [self.args["n_steps"] - 1]
             
-            for curr_t in tqdm(reversed(range(n_steps)), desc="Sampling"):
+            for curr_t in tqdm(reversed(range(n_steps))):
                 t = torch.full((self.args.n_samples,), curr_t, device=self.args.device, dtype=torch.long)
                 lambda_t = self.diffusion.get_lambda(t)
                 lambda_t_prim = self.diffusion.get_lambda(torch.clamp(t - 1, min=0))
@@ -167,16 +166,14 @@ class Trainer:
                 x_t_hat = (z_t - sigma_t * eps_guided) / alpha_t
                 z_t = self.diffusion.p_sample(z_t, lambda_t, lambda_t_prim, x_t_hat)
 
-                if self.args.nb_save is not None and curr_t in saving_steps:
-                    print(f"Showing/saving samples from epoch {self.current_epoch} with labels: {labels.tolist()}")
-                    show_save(
-                        z_t,
-                        labels,
-                        show=True,
-                        save=True,
-                        file_name=f"DDPM_epoch_{self.current_epoch}_sample_{curr_t}.png",
-                    )
-            self.eps_model.train()
+        print(f"Showing/saving samples from epoch {self.current_epoch} with labels: {labels.tolist()}")
+        show_save(
+            z_t,
+            labels,
+            show=show,
+            save=save,
+            file_name=f"DDPM_epoch_{self.current_epoch}.png",
+        )
         return z_t
 
     def save_model(self):
@@ -206,7 +203,7 @@ def show_save(img_tensor, labels=None, show=True, save=True, file_name="sample.p
     for i, ax in enumerate(axs.flat):
         img = img_tensor[i].squeeze().cpu().numpy()
         label = labels[i].item()
-        ax.imshow(img, cmap="gray")
+        ax.imshow(img, cmap='gray')
         ax.set_title(f'Digit:{label}')
         ax.axis("off")
     plt.tight_layout()
@@ -217,7 +214,8 @@ def show_save(img_tensor, labels=None, show=True, save=True, file_name="sample.p
     plt.close(fig)
 
 
-def experiment3(training=True):
+def experiment3(train: bool = True, checkpoint_epoch: int = None):
+    # -- prepare data, model, diffusion and trainer --
     dataloader = torch.utils.data.DataLoader(
         MNISTDataset(),
         batch_size=args.batch_size,
@@ -228,20 +226,30 @@ def experiment3(training=True):
     )
 
     eps_model = UNet_conditional(c_in=1, c_out=1, num_classes=10)
-
     diffusion_model = CFGDiffusion(
         eps_model=eps_model,
         n_steps=args.n_steps,
         device=args.device,
     )
-
     trainer = Trainer(args, eps_model, diffusion_model)
 
-    if training:
-        trainer.train(dataloader)
-    else:
-        trainer.load_model(args.MODEL_PATH)
+    # -- load-only mode --
+    if not train:
+        # default to last epoch if none specified
+        epoch_to_load = checkpoint_epoch if checkpoint_epoch is not None else args.epochs - 1
+        ckpt_path = os.path.join(
+            CHECKPOINT_DIR,
+            f"cfg_epoch_{epoch_to_load:03d}.pt"
+        )
+        if not os.path.isfile(ckpt_path):
+            raise FileNotFoundError(f"No checkpoint found at {ckpt_path}")
 
+        trainer.load_model(ckpt_path)
+        print(f"[Checkpoint] Loaded model at epoch {trainer.current_epoch} from {ckpt_path}")
+        return trainer
+
+    # -- training mode --
+    trainer.train(dataloader)
     return trainer
 
 if __name__ == "__main__":
