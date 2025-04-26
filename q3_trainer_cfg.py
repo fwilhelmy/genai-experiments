@@ -128,14 +128,14 @@ class Trainer:
         with torch.no_grad():
     
             z_t = torch.randn(
-                        [
-                            self.args.n_samples,
-                            self.args.image_channels,
-                            self.args.image_size,
-                            self.args.image_size,
-                        ],
-                        device=self.args.device
-                    )
+                [
+                    self.args.n_samples,
+                    self.args.image_channels,
+                    self.args.image_size,
+                    self.args.image_size,
+                ],
+                device=self.args.device
+            )
             
             if labels == None:
                 labels = torch.randint(0, 9, (self.args.n_samples,), device=self.args.device)
@@ -143,22 +143,25 @@ class Trainer:
             if self.args.nb_save is not None:
                 saving_steps = [self.args["n_steps"] - 1]
             
-            # Remove noise for $T$ steps
-            for t_ in tqdm(range(n_steps)):
-            
-                t = n_steps - t_ - 1
-                t = torch.full((self.args.n_samples,), t, device=z_t.device, dtype=torch.long)
+            # Remove noise for T steps
+            for curr_t in tqdm(reversed(range(n_steps)), desc="Sampling"):
+                t = torch.full((self.args.n_samples,), t, device=self.args.device, dtype=torch.long)
                 
-                #TODO: Get lambda and lambda prim based on t 
-                raise NotImplementedError
+                lambda_t = self.diffusion.get_lambda(t)
+                lambda_t_prim = self.diffusion.get_lambda(torch.clamp(t - 1, min=0))
                 
-                #TODO: Add linear interpolation between unconditional and conditional preidiction according to 3 in Algo. 2 using cfg_scale
-                raise NotImplementedError
+                eps_uncond = self.eps_model(z_t, None) # εθ(z_t)    
+                eps_cond = self.eps_model(z_t, labels) # εθ(z_t, c)
+                
+                eps_guided = (1 + cfg_scale) * eps_cond - cfg_scale * eps_uncond
                     
-                #TODO: Get x_t then sample z_t from the reverse process according to 4. and 5. in Algo 2.
-                raise NotImplementedError
+                alpha_t = self.diffusion.alpha_lambda(lambda_t)
+                sigma_t = self.diffusion.sigma_lambda(lambda_t)
+                x_t_hat = (z_t - sigma_t * eps_guided) / alpha_t
 
-                if self.args.nb_save is not None and t_ in saving_steps:
+                x_t = self.diffusion.p_sample(z_t, lambda_t, lambda_t_prim, x_t_hat)
+
+                if self.args.nb_save is not None and curr_t in saving_steps:
                     print(f"Showing/saving samples from epoch {self.current_epoch} with labels: {labels.tolist()}")
                     show_save(
                         x_t,
