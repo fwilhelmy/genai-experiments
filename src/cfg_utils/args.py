@@ -10,7 +10,7 @@ args = {
     "batch_size": 256,  # Batch size
     "n_samples": 16,  # Number of samples to generate
     "learning_rate": 2e-4,  # Learning rate
-    "epochs": 16,  # Number of training epochs
+    "epochs": 20,  # Number of training epochs
     "device": "cuda" if torch.cuda.is_available() else "mps" if torch.mps.is_available() else "cpu",  # Device
     "fp16_precision": True,
     "show_every_n_epochs": 2,
