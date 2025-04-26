@@ -13,9 +13,12 @@ from q3_cfg_diffusion import CFGDiffusion
 import numpy as np 
 import copy 
 
-# ensure checkpoint directory exists
-CHECKPOINT_DIR = "checkpoints"
+# ensure all outputs go under results/experiment3
+RESULTS_DIR = "results/experiment3"
+CHECKPOINT_DIR = os.path.join(RESULTS_DIR, "checkpoints")
+IMAGE_DIR = os.path.join(RESULTS_DIR, "images")
 os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+os.makedirs(IMAGE_DIR, exist_ok=True)
 
 torch.manual_seed(42)
 
@@ -135,7 +138,6 @@ class Trainer:
             n_steps = self.args.n_steps
             
         self.eps_model.eval()
-            
         with torch.no_grad():
             z_t = torch.randn(
                 [
@@ -153,7 +155,6 @@ class Trainer:
             if self.args.nb_save is not None:
                 saving_steps = [self.args["n_steps"] - 1]
             
-            # Remove noise for T steps
             for curr_t in tqdm(reversed(range(n_steps)), desc="Sampling"):
                 t = torch.full((self.args.n_samples,), curr_t, device=self.args.device, dtype=torch.long)
                 lambda_t = self.diffusion.get_lambda(t)
@@ -210,7 +211,7 @@ def show_save(img_tensor, labels=None, show=True, save=True, file_name="sample.p
         ax.axis("off")
     plt.tight_layout()
     if save:
-        plt.savefig('results/experiment2/images/' + file_name)
+        plt.savefig(os.path.join(IMAGE_DIR, file_name))
     if show:
         plt.show()
     plt.close(fig)

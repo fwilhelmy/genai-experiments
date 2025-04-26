@@ -12,11 +12,12 @@ from ddpm_utils.dataset import MNISTDataset
 from ddpm_utils.unet import UNet, load_weights
 from q2_ddpm import DenoiseDiffusion
 
-# Create necessary directories if they don't exist
-if not os.path.exists('images'):
-    os.makedirs('images')
-CHECKPOINT_DIR = "checkpoints"
+# ensure all outputs go under results/experiment2
+RESULTS_DIR = "results/experiment2"
+CHECKPOINT_DIR = os.path.join(RESULTS_DIR, "checkpoints")
+IMAGE_DIR = os.path.join(RESULTS_DIR, "images")
 os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+os.makedirs(IMAGE_DIR, exist_ok=True)
 
 torch.manual_seed(42)
 
@@ -174,7 +175,7 @@ class Trainer:
             ax.axis("off")
         plt.tight_layout()
         if save:
-            plt.savefig('results/experiment2/images/' + file_name)
+            plt.savefig(os.path.join(IMAGE_DIR, file_name))
         if show:
             plt.show()
         plt.close(fig)
