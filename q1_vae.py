@@ -8,7 +8,7 @@ import torch
 
 torch.manual_seed(42)
 
-def log_likelihood_bernoulli(mu, target): # Implemented
+def log_likelihood_bernoulli(mu, target):
     """
     :param mu: (FloatTensor) - shape: (batch_size x input_size) - The mean of Bernoulli random variables p(x=1).
     :param target: (FloatTensor) - shape: (batch_size x input_size) - Target samples (binary values).
@@ -26,7 +26,7 @@ def log_likelihood_bernoulli(mu, target): # Implemented
 
     return ll_bernoulli.sum(dim=1) # sum over the input size
 
-def log_likelihood_normal(mu, logvar, z): # Implemented
+def log_likelihood_normal(mu, logvar, z):
     """
     :param mu: (FloatTensor) - shape: (batch_size x input_size) - The mean of Normal distributions.
     :param logvar: (FloatTensor) - shape: (batch_size x input_size) - The log variance of Normal distributions.
@@ -54,7 +54,7 @@ def log_likelihood_normal(mu, logvar, z): # Implemented
     
     return ll_normal
 
-def log_mean_exp(y): # Implemented
+def log_mean_exp(y):
     """
     :param y: (FloatTensor) - shape: (batch_size x sample_size) - Values to be evaluated for log_mean_exp. For example log proababilies
     :return: (FloatTensor) - shape: (batch_size,) - Output for log_mean_exp.
@@ -66,7 +66,7 @@ def log_mean_exp(y): # Implemented
     return lme.squeeze(1) # (batch_size,)
 
 
-def kl_gaussian_gaussian_analytic(mu_q, logvar_q, mu_p, logvar_p): # Implemented
+def kl_gaussian_gaussian_analytic(mu_q, logvar_q, mu_p, logvar_p):
     """ 
     :param mu_q: (FloatTensor) - shape: (batch_size x input_size) - The mean of first distributions (Normal distributions).
     :param logvar_q: (FloatTensor) - shape: (batch_size x input_size) - The log variance of first distributions (Normal distributions).
@@ -90,7 +90,7 @@ def kl_gaussian_gaussian_analytic(mu_q, logvar_q, mu_p, logvar_p): # Implemented
 
     return kl_gg
 
-def kl_gaussian_gaussian_mc(mu_q, logvar_q, mu_p, logvar_p, num_samples=1): # Implemented
+def kl_gaussian_gaussian_mc(mu_q, logvar_q, mu_p, logvar_p, num_samples=1):
     """ 
     :param mu_q: (FloatTensor) - shape: (batch_size x input_size) - The mean of first distributions (Normal distributions).
     :param logvar_q: (FloatTensor) - shape: (batch_size x input_size) - The log variance of first distributions (Normal distributions).

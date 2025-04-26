@@ -13,8 +13,6 @@ class DenoiseDiffusion():
         self.n_steps = n_steps
         self.sigma2 = self.beta
 
-
-    ### UTILS
     def gather(self, c: torch.Tensor, t: torch.Tensor):
         c_ = c.gather(-1, t)
         return c_.reshape(-1, 1, 1, 1)
