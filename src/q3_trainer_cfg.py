@@ -121,7 +121,7 @@ class Trainer:
             if current_epoch % self.args.show_every_n_epochs == 0:
                 self.sample(cfg_scale=self.args.cfg_scale)
 
-            if (current_epoch + 1) % self.args.save_every_n_epochs == 0:
+            if (current_epoch + 1) % self.args.save_every_n_epochs == 0 or current_epoch == self.args.epochs - 1:
                 self.save_model()
 
         # at end of training, save loss history
@@ -151,9 +151,6 @@ class Trainer:
             if labels is None:
                 labels = torch.randint(0, 9, (self.args.n_samples,), device=self.args.device)
                 
-            if self.args.nb_save is not None:
-                saving_steps = [self.args["n_steps"] - 1]
-            
             for curr_t in tqdm(reversed(range(n_steps))):
                 t = torch.full((self.args.n_samples,), curr_t, device=self.args.device, dtype=torch.long)
                 lambda_t = self.diffusion.get_lambda(t)
