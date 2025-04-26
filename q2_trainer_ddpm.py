@@ -7,6 +7,11 @@ import numpy as np
 
 from ddpm_utils.args import * 
 
+ # Create the images directory if it doesn't exist
+import os
+if not os.path.exists('images'):
+    os.makedirs('images')
+
 torch.manual_seed(42)
 
 def one_param(m):
@@ -124,18 +129,19 @@ class Trainer:
                 device=self.args.device,
             )
             
-            saving_steps = [n_steps - 1] if self.args.nb_save is not None else []
+            if self.args.nb_save is not None:
+                saving_steps = [self.args["n_steps"] - 1]
 
             # Loop from t = T-1 down to 0
-            for T in tqdm(reversed(range(n_steps)), desc="Sampling"):
-                t = torch.full((self.args.n_samples,), T, device=self.args.device, dtype=torch.long)
+            for curr_t in tqdm(reversed(range(n_steps)), desc="Sampling"):
+                t = torch.full((self.args.n_samples,), curr_t, device=self.args.device, dtype=torch.long)
 
                 x = self.diffusion.p_sample(x, t)            
             
-                if self.args.nb_save is not None and T in saving_steps:
-                    print(f"Saving samples from epoch t={self.current_epoch}")
+                if self.args.nb_save is not None and curr_t in saving_steps:
+                    print(f"Showing/saving samples from epoch {self.current_epoch}")
                     self.show_save(x, show=True, save=True,
-                        file_name=f"DDPM_epoch_{self.current_epoch}_sample_{T}.png")
+                        file_name=f"DDPM_epoch_{self.current_epoch}_sample_{curr_t}.png")
         return x
 
     def save_model(self):
@@ -189,13 +195,13 @@ class Trainer:
 
             # Loop from t = T-1 down to 0
             # Hint: if GPU crashes, it might be because you accumulate unused gradient ... don't forget to remove gradient
-            for T in tqdm(reversed(range(n_steps)), desc="Intermediate sampling"):
-                t = torch.full((n_samples,), T, device=args.device, dtype=torch.long)
+            for curr_t in tqdm(reversed(range(n_steps)), desc="Intermediate sampling"):
+                t = torch.full((n_samples,), curr_t, device=args.device, dtype=torch.long)
 
                 x = self.diffusion.p_sample(x, t)
 
                 # Store intermediate result if it's a step we want to display
-                if T in steps_to_show:
+                if curr_t in steps_to_show:
                     images.append(x.detach().cpu().numpy())
 
         return images
