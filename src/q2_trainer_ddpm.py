@@ -104,41 +104,40 @@ class Trainer:
             if current_epoch % self.args.show_every_n_epochs == 0:
                 self.sample()
 
-            if (current_epoch + 1) % self.args.save_every_n_epochs == 0:
+            if (current_epoch + 1) % self.args.save_every_n_epochs == 0 or current_epoch == self.args.epochs - 1:
                 self.save_model()
 
-    def sample(self, n_steps=None, set_seed=False):
+    def sample(self, n_steps=None, n_samples=None, set_seed=False, show=False, save=True):
         if set_seed:
             torch.manual_seed(42)
         if n_steps is None:
             n_steps = self.args.n_steps
+        if n_samples is None:
+            n_samples = self.args.n_samples
 
         with torch.no_grad():
             x = torch.randn(
                 [
-                    self.args.n_samples,
+                    n_samples,
                     self.args.image_channels,
                     self.args.image_size,
                     self.args.image_size,
                 ],
                 device=self.args.device,
             )
-            if self.args.nb_save is not None:
-                saving_steps = [self.args["n_steps"] - 1]
-
+            
             for curr_t in tqdm(reversed(range(n_steps)), desc="Sampling"):
-                t = torch.full((self.args.n_samples,), curr_t, device=self.args.device, dtype=torch.long)
+                t = torch.full((n_samples,), curr_t, device=self.args.device, dtype=torch.long)
                 x = self.diffusion.p_sample(x, t)
-        if self.args.nb_save is not None and curr_t in saving_steps:
-            print(f"Showing/saving samples from epoch {self.current_epoch}")
-            self.show_save(
-                x, show=False, save=True,
-                file_name=f"DDPM_epoch_{self.current_epoch}.png"
-            )
+
+        print(f"Showing/saving samples from epoch {self.current_epoch}")
+        self.show_save(
+            x, show=show, save=save,
+            file_name=f"DDPM_epoch_{self.current_epoch}.png"
+        )
         return x
 
     def save_model(self):
-        """Save model+optimizer with epoch stamp, plus loss history to JSON."""
         ckpt = {
             'epoch': self.current_epoch,
             'model_state_dict': self.eps_model.state_dict(),
@@ -149,15 +148,7 @@ class Trainer:
             f"ddpm_epoch_{self.current_epoch:03d}.pt"
         )
         torch.save(ckpt, filename)
-        # save loss history
-        json_path = os.path.join(
-            CHECKPOINT_DIR,
-            f"loss_history_epoch_{self.current_epoch:03d}.json"
-        )
-        with open(json_path, 'w') as jf:
-            json.dump(self.loss_per_iter, jf)
         print(f"[Checkpoint] model saved to {filename}")
-        print(f"[Checkpoint] loss history saved to {json_path}")
 
     def load_model(self, model_path):
         checkpoint = torch.load(model_path, map_location=args.device)
@@ -193,6 +184,13 @@ class Trainer:
             if step in steps_to_show:
                 images.append(x.detach().cpu().numpy())
         return images
+
+    def save_history(self):
+        """Save full training loss history once, at the end."""
+        json_path = os.path.join(CHECKPOINT_DIR, "loss_history.json")
+        with open(json_path, 'w') as jf:
+            json.dump(self.loss_per_iter, jf)
+        print(f"[Training] loss history saved to {json_path}")
 
 def experiment2(train: bool = True, checkpoint_epoch: int = None):
     # instantiate and (optionally) pre-load your base model
@@ -232,6 +230,7 @@ def experiment2(train: bool = True, checkpoint_epoch: int = None):
 
     # otherwise, run training as before
     trainer.train(dataloader)
+    trainer.save_history()
     return trainer
 
 if __name__ == "__main__":
