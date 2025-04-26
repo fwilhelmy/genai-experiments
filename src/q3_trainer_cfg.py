@@ -1,14 +1,14 @@
 
 import torch
-import torch.utils.data
-import torchvision
-from torch import nn
-from typing import Tuple, Optional
-import torch.nn.functional as F
 from tqdm import tqdm
-from easydict import EasyDict
 import matplotlib.pyplot as plt
 from torch.amp import GradScaler, autocast
+
+from cfg_utils.args import *
+from cfg_utils.dataset import *
+from cfg_utils.unet import *
+from q3_cfg_diffusion import CFGDiffusion
+
 
 import numpy as np 
 import copy 
@@ -180,6 +180,13 @@ class Trainer:
                 'optimizer_state_dict': self.optimizer.state_dict(),
                 }, self.args.MODEL_PATH)
     
+    def load_model(self, model_path):
+        # load torch save model
+        checkpoint = torch.load(model_path, map_location=args.device)
+        self.eps_model.load_state_dict(checkpoint['model_state_dict'])
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        self.current_epoch = checkpoint['epoch']
+    
 def show_save(img_tensor, labels=None, show=True, save=True, file_name="sample.png"):
     fig, axs = plt.subplots(3, 3, figsize=(10, 10))  # Create a 4x4 grid of subplots
     assert img_tensor.shape[0] >= 9, "Number of images should be at least 9"
@@ -198,3 +205,34 @@ def show_save(img_tensor, labels=None, show=True, save=True, file_name="sample.p
     if show:
         plt.show()
     plt.close(fig)
+
+
+def experiment3(training=True):
+    dataloader = torch.utils.data.DataLoader(
+        MNISTDataset(),
+        batch_size=args.batch_size,
+        shuffle=True,
+        drop_last=True,
+        num_workers=0,
+        pin_memory=True,
+    )
+
+    eps_model = UNet_conditional(c_in=1, c_out=1, num_classes=10)
+
+    diffusion_model = CFGDiffusion(
+                eps_model=eps_model,
+                n_steps=args.n_steps,
+                device=args.device,
+            )
+
+    trainer = Trainer(args, eps_model, diffusion_model)
+
+    if training:
+        trainer.train(dataloader)
+    else:
+        trainer.load_model(args.MODEL_PATH)
+
+    return trainer
+
+if __name__ == "__main__":
+    experiment3()

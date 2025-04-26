@@ -3,7 +3,13 @@ from matplotlib import pyplot as plt
 from tqdm import tqdm
 from torch.amp import GradScaler, autocast
 import copy
-import numpy as np
+import torch.nn.functional as F
+
+from ddpm_utils.args import *
+from ddpm_utils.dataset import *
+from ddpm_utils.unet import *
+from q2_ddpm import DenoiseDiffusion
+
 
 from ddpm_utils.args import * 
 
@@ -61,8 +67,6 @@ class Trainer:
 
         self.ema = EMA(0.995)
         self.ema_model = copy.deepcopy(self.eps_model).eval().requires_grad_(False)
-
-
 
     def train_epoch(self, dataloader, scaler):
         current_lr = round(self.optimizer.param_groups[0]['lr'], 5)
@@ -145,11 +149,19 @@ class Trainer:
         return x
 
     def save_model(self):
+        # save torch save model
         torch.save({
                 'epoch': self.current_epoch,
                 'model_state_dict': self.eps_model.state_dict(),
                 'optimizer_state_dict': self.optimizer.state_dict(),
                 }, args.MODEL_PATH)
+        
+    def load_model(self, model_path):
+        # load torch save model
+        checkpoint = torch.load(model_path, map_location=args.device)
+        self.eps_model.load_state_dict(checkpoint['model_state_dict'])
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        self.current_epoch = checkpoint['epoch']
 
     def show_save(self, img_tensor, show=True, save=True, file_name="sample.png"):
         fig, axs = plt.subplots(3, 3, figsize=(10, 10))  # Create a 4x4 grid of subplots
@@ -203,3 +215,34 @@ class Trainer:
                 images.append(x.detach().cpu().numpy())
 
         return images
+
+def experiment2(training=True):
+    eps_model = UNet(c_in=1,c_out=1)
+    eps_model = load_weights(eps_model, args.MODEL_PATH)
+
+    diffusion_model = DenoiseDiffusion(
+            eps_model=eps_model,
+            n_steps=args.n_steps,
+            device=args.device,
+        )
+
+    trainer = Trainer(args, eps_model, diffusion_model)
+
+    dataloader = torch.utils.data.DataLoader(
+        MNISTDataset(),
+        batch_size=args.batch_size,
+        shuffle=True,
+        drop_last=True,
+        num_workers=0,
+        pin_memory=True,
+    )
+
+    if training:
+        trainer.train(dataloader)
+    else:
+        trainer.load_model(args.MODEL_PATH)
+
+    return trainer
+
+if __name__ == "__main__":
+    experiment2()

@@ -11,7 +11,7 @@ from q1_vae import *
 parser = argparse.ArgumentParser(description='VAE MNIST Example')
 parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                     help='input batch size for training (default: 128)')
-parser.add_argument('--epochs', type=int, default=10, metavar='N',
+parser.add_argument('--epochs', type=int, default=20, metavar='N',
                     help='number of epochs to train (default: 10)')
 parser.add_argument('--no-cuda', action='store_true', default=False,
                     help='disables CUDA training')
@@ -103,6 +103,14 @@ def train(epoch):
 
     print('====> Epoch: {} Average loss: {:.4f}'.format(
           epoch, train_loss / len(train_loader.dataset)))
+
+def experiment1():
+    model.train()
+    for epoch in range(1, args.epochs + 1):
+        train(epoch)
+
+    torch.save(model.state_dict(), 'vae.pth')
+    # TODO
 
 if __name__ == "__main__":
     for epoch in range(1, args.epochs + 1):
