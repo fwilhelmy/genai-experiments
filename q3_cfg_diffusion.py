@@ -10,6 +10,7 @@ from easydict import EasyDict
 import matplotlib.pyplot as plt
 from torch.amp import GradScaler, autocast
 import os 
+import math
 
 from cfg_utils.args import * 
 
@@ -24,9 +25,11 @@ class CFGDiffusion():
         self.lambda_max = 20
     
     def get_lambda(self, t: torch.Tensor): 
-        u = t / (self.n_steps - 1) # u in [0,1]
-        lambda_t = self.lambda_min + u * (self.lambda_max - self.lambda_min) # lambda_t in [lambda_min, lambda_max]
-        return lambda_t.view(-1, 1, 1, 1) 
+        u = t / self.n_steps # u in [0,1]
+        b = math.atan(math.exp(-self.lambda_max/2))
+        a = math.atan(math.exp(-self.lambda_min/2)) - b
+        lambda_t = -2 * torch.log(torch.tan(a * u + b))
+        return lambda_t.view(-1, 1, 1, 1)
     
     def alpha_lambda(self, lambda_t: torch.Tensor):
         var = 1 / (1 + torch.exp(-lambda_t))
@@ -87,6 +90,7 @@ class CFGDiffusion():
         if set_seed:
             torch.manual_seed(42)
         batch_size = x0.shape[0]
+        dim = list(range(1, x0.ndim))
         t = torch.randint(
             0, self.n_steps, (batch_size,), device=x0.device, dtype=torch.long
         )
@@ -99,6 +103,6 @@ class CFGDiffusion():
         
         estimated_noise = self.eps_model(z_lambda, labels)
 
-        loss = (estimated_noise - noise).pow(2).mean()
+        loss = (noise - estimated_noise).pow(2).sum(dim=dim).mean()
     
         return loss

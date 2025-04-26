@@ -145,7 +145,7 @@ class Trainer:
             
             # Remove noise for T steps
             for curr_t in tqdm(reversed(range(n_steps)), desc="Sampling"):
-                t = torch.full((self.args.n_samples,), t, device=self.args.device, dtype=torch.long)
+                t = torch.full((self.args.n_samples,), curr_t, device=self.args.device, dtype=torch.long)
                 
                 lambda_t = self.diffusion.get_lambda(t)
                 lambda_t_prim = self.diffusion.get_lambda(torch.clamp(t - 1, min=0))
@@ -159,19 +159,19 @@ class Trainer:
                 sigma_t = self.diffusion.sigma_lambda(lambda_t)
                 x_t_hat = (z_t - sigma_t * eps_guided) / alpha_t
 
-                x_t = self.diffusion.p_sample(z_t, lambda_t, lambda_t_prim, x_t_hat)
+                z_t = self.diffusion.p_sample(z_t, lambda_t, lambda_t_prim, x_t_hat)
 
                 if self.args.nb_save is not None and curr_t in saving_steps:
                     print(f"Showing/saving samples from epoch {self.current_epoch} with labels: {labels.tolist()}")
                     show_save(
-                        x_t,
+                        z_t,
                         labels,
                         show=True,
                         save=True,
-                        file_name=f"DDPM_epoch_{self.current_epoch}_sample_{t_}.png",
+                        file_name=f"DDPM_epoch_{self.current_epoch}_sample_{curr_t}.png",
                     )
             self.eps_model.train()
-        return x_t
+        return z_t
 
     def save_model(self):
         torch.save({

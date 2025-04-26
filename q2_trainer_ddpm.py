@@ -168,8 +168,7 @@ class Trainer:
         if show:
             plt.show()
         plt.close(fig)
-        
-        
+    
     def generate_intermediate_samples(self, n_samples=4, img_size=32, steps_to_show=[0,999], n_steps=None, set_seed=False):
         """
         Generate multiple images and return intermediate steps of the diffusion process
@@ -177,31 +176,30 @@ class Trainer:
             n_samples: Number of images to generate
             img_size: Size of the images (assumes square images)
             every_n_steps: Capture intermediate result every n steps
-        Returns:
+            Returns:
             List of tensors representing the images at different steps
         """
+        
         if set_seed:
             torch.manual_seed(42)
+        
         if n_steps is None:
             n_steps = args.n_steps
+            
+        # Start from random noise
+        x = torch.randn(n_samples, 1, img_size, img_size, device=args.device, requires_grad=False)
 
+        # Store images at each step we want to show
+        images = []
+        images.append(x.detach().cpu().numpy())  # Initial noise
+
+        for step in tqdm(range(1, n_steps+1, 1)):
+            t = torch.full((n_samples,), step, device=self.args.device, dtype=torch.long)
+
+            x = self.diffusion.p_sample(x, t)
         
-        with torch.no_grad():
-            # Start from random noise
-            x = torch.randn(n_samples, 1, img_size, img_size, device=args.device, requires_grad=False)
-
-            images = []
-            images.append(x.detach().cpu().numpy())  # Initial noise
-
-            # Loop from t = T-1 down to 0
-            # Hint: if GPU crashes, it might be because you accumulate unused gradient ... don't forget to remove gradient
-            for curr_t in tqdm(reversed(range(n_steps)), desc="Intermediate sampling"):
-                t = torch.full((n_samples,), curr_t, device=args.device, dtype=torch.long)
-
-                x = self.diffusion.p_sample(x, t)
-
-                # Store intermediate result if it's a step we want to display
-                if curr_t in steps_to_show:
-                    images.append(x.detach().cpu().numpy())
+            # Store intermediate result if it's a step we want to display
+            if step in steps_to_show:
+                images.append(x.detach().cpu().numpy())
 
         return images

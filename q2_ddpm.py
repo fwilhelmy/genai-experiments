@@ -82,6 +82,6 @@ class DenoiseDiffusion():
         estimated_noise = self.eps_model(xt, t)
 
         # Compute the loss
-        loss = (estimated_noise - noise).pow(2).mean()
+        loss = (noise - estimated_noise).pow(2).sum(dim=dim).mean()
 
         return loss
