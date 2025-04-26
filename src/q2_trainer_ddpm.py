@@ -1,3 +1,5 @@
+import os
+import json
 import torch
 from matplotlib import pyplot as plt 
 from tqdm import tqdm
@@ -5,18 +7,16 @@ from torch.amp import GradScaler, autocast
 import copy
 import torch.nn.functional as F
 
-from ddpm_utils.args import *
-from ddpm_utils.dataset import *
-from ddpm_utils.unet import *
+from ddpm_utils.args import args
+from ddpm_utils.dataset import MNISTDataset
+from ddpm_utils.unet import UNet, load_weights
 from q2_ddpm import DenoiseDiffusion
 
-
-from ddpm_utils.args import * 
-
- # Create the images directory if it doesn't exist
-import os
+# Create necessary directories if they don't exist
 if not os.path.exists('images'):
     os.makedirs('images')
+CHECKPOINT_DIR = "checkpoints"
+os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
 torch.manual_seed(42)
 
@@ -51,20 +51,15 @@ class EMA:
     def reset_parameters(self, ema_model, model):
         ema_model.load_state_dict(model.state_dict())
 
-
 class Trainer:
     def __init__(self, args, eps_model, diffusion_model):
-
         self.eps_model = eps_model.to(args.device)
-
         self.diffusion = diffusion_model
-
         self.optimizer = torch.optim.Adam(
             self.eps_model.parameters(), lr=args.learning_rate
         )
         self.args = args
         self.current_epoch = 0
-
         self.ema = EMA(0.995)
         self.ema_model = copy.deepcopy(self.eps_model).eval().requires_grad_(False)
 
@@ -75,53 +70,48 @@ class Trainer:
         with tqdm(range(len(dataloader)), desc=f'Epoch : - lr: - Loss :') as progress:
             for x0 in dataloader:
                 i += 1
-                # Move data to device
                 x0 = x0.to(self.args.device)
-                # Calculate the loss
                 with autocast(device_type=args.device, enabled=self.args.fp16_precision):
                     loss = self.diffusion.loss(x0)
-                
-                # Zero gradients
                 self.optimizer.zero_grad()
-                # Backward pass
                 scaler.scale(loss).backward()
                 scaler.step(self.optimizer)
                 scaler.update()
                 self.ema.step_ema(self.ema_model, self.eps_model)
-
                 running_loss += loss.item()
-
                 self.loss_per_iter.append(running_loss / i)
                 progress.update()
-                progress.set_description(f'Epoch: {self.current_epoch}/{self.args.epochs} - lr: {current_lr} - Loss: {round(running_loss / i, 2)}')
-            progress.set_description(f'Epoch: {self.current_epoch}/{self.args.epochs} - lr: {current_lr} - Loss: {round(running_loss / len(dataloader), 2)}')
-
-            # Step the scheduler after each epoch
+                progress.set_description(
+                    f'Epoch: {self.current_epoch}/{self.args.epochs} - '
+                    f'lr: {current_lr} - Loss: {round(running_loss / i, 2)}'
+                )
+            progress.set_description(
+                f'Epoch: {self.current_epoch}/{self.args.epochs} - '
+                f'lr: {current_lr} - Loss: {round(running_loss / len(dataloader), 2)}'
+            )
             self.scheduler.step()
 
-
     def train(self, dataloader):
-            scaler = GradScaler(device=self.args.device, enabled=self.args.fp16_precision)
-            self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=10, gamma=0.1)
-            start_epoch = self.current_epoch
-            self.loss_per_iter = []
-            for current_epoch in range(start_epoch, self.args.epochs):
-                self.current_epoch = current_epoch
-                self.train_epoch(dataloader, scaler)
+        scaler = GradScaler(device=self.args.device, enabled=self.args.fp16_precision)
+        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=10, gamma=0.1)
+        start_epoch = self.current_epoch
+        self.loss_per_iter = []
+        for current_epoch in range(start_epoch, self.args.epochs):
+            self.current_epoch = current_epoch
+            self.train_epoch(dataloader, scaler)
 
-                if current_epoch % self.args.show_every_n_epochs == 0:
-                    self.sample()
+            if current_epoch % self.args.show_every_n_epochs == 0:
+                self.sample()
 
-                if (current_epoch + 1) % self.args.save_every_n_epochs == 0:
-                    self.save_model()
-
+            if (current_epoch + 1) % self.args.save_every_n_epochs == 0:
+                self.save_model()
 
     def sample(self, n_steps=None, set_seed=False):
         if set_seed:
             torch.manual_seed(42)
         if n_steps is None:
             n_steps = self.args.n_steps
-            
+
         with torch.no_grad():
             x = torch.randn(
                 [
@@ -132,88 +122,75 @@ class Trainer:
                 ],
                 device=self.args.device,
             )
-            
             if self.args.nb_save is not None:
                 saving_steps = [self.args["n_steps"] - 1]
 
-            # Loop from t = T-1 down to 0
             for curr_t in tqdm(reversed(range(n_steps)), desc="Sampling"):
                 t = torch.full((self.args.n_samples,), curr_t, device=self.args.device, dtype=torch.long)
-
-                x = self.diffusion.p_sample(x, t)            
-            
+                x = self.diffusion.p_sample(x, t)
                 if self.args.nb_save is not None and curr_t in saving_steps:
                     print(f"Showing/saving samples from epoch {self.current_epoch}")
-                    self.show_save(x, show=True, save=True,
-                        file_name=f"DDPM_epoch_{self.current_epoch}_sample_{curr_t}.png")
+                    self.show_save(
+                        x, show=False, save=True,
+                        file_name=f"DDPM_epoch_{self.current_epoch}_sample_{curr_t}.png"
+                    )
         return x
 
     def save_model(self):
-        # save torch save model
-        torch.save({
-                'epoch': self.current_epoch,
-                'model_state_dict': self.eps_model.state_dict(),
-                'optimizer_state_dict': self.optimizer.state_dict(),
-                }, args.MODEL_PATH)
-        
+        """Save model+optimizer with epoch stamp, plus loss history to JSON."""
+        ckpt = {
+            'epoch': self.current_epoch,
+            'model_state_dict': self.eps_model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+        }
+        filename = os.path.join(
+            CHECKPOINT_DIR,
+            f"ddpm_epoch_{self.current_epoch:03d}.pt"
+        )
+        torch.save(ckpt, filename)
+        # save loss history
+        json_path = os.path.join(
+            CHECKPOINT_DIR,
+            f"loss_history_epoch_{self.current_epoch:03d}.json"
+        )
+        with open(json_path, 'w') as jf:
+            json.dump(self.loss_per_iter, jf)
+        print(f"[Checkpoint] model saved to {filename}")
+        print(f"[Checkpoint] loss history saved to {json_path}")
+
     def load_model(self, model_path):
-        # load torch save model
         checkpoint = torch.load(model_path, map_location=args.device)
         self.eps_model.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.current_epoch = checkpoint['epoch']
 
     def show_save(self, img_tensor, show=True, save=True, file_name="sample.png"):
-        fig, axs = plt.subplots(3, 3, figsize=(10, 10))  # Create a 4x4 grid of subplots
+        fig, axs = plt.subplots(3, 3, figsize=(10, 10))
         assert img_tensor.shape[0] >= 9, "Number of images should be at least 9"
         img_tensor = img_tensor[:9]
         for i, ax in enumerate(axs.flat):
-            # Remove the channel dimension and convert to numpy
             img = img_tensor[i].squeeze().cpu().numpy()
-
-            ax.imshow(img, cmap="gray")  # Display the image in grayscale
-            ax.axis("off")  # Hide the axis
-
+            ax.imshow(img, cmap="gray")
+            ax.axis("off")
         plt.tight_layout()
         if save:
             plt.savefig('results/experiment2/images/' + file_name)
         if show:
             plt.show()
         plt.close(fig)
-    
+
     def generate_intermediate_samples(self, n_samples=4, img_size=32, steps_to_show=[0,999], n_steps=None, set_seed=False):
-        """
-        Generate multiple images and return intermediate steps of the diffusion process
-        Args:
-            n_samples: Number of images to generate
-            img_size: Size of the images (assumes square images)
-            every_n_steps: Capture intermediate result every n steps
-            Returns:
-            List of tensors representing the images at different steps
-        """
-        
         if set_seed:
             torch.manual_seed(42)
-        
         if n_steps is None:
             n_steps = args.n_steps
-            
-        # Start from random noise
         x = torch.randn(n_samples, 1, img_size, img_size, device=args.device, requires_grad=False)
-
-        # Store images at each step we want to show
-        images = []
-        images.append(x.detach().cpu().numpy())  # Initial noise
-
-        for step in tqdm(range(1, n_steps+1, 1)):
+        images = [x.detach().cpu().numpy()]
+        for step in tqdm(range(1, n_steps+1)):
             t = torch.full((n_samples,), step, device=self.args.device, dtype=torch.long)
-
             x = self.diffusion.p_sample(x, t)
-        
-            # Store intermediate result if it's a step we want to display
             if step in steps_to_show:
                 images.append(x.detach().cpu().numpy())
-
         return images
 
 def experiment2(training=True):
@@ -221,10 +198,10 @@ def experiment2(training=True):
     eps_model = load_weights(eps_model, args.MODEL_PATH)
 
     diffusion_model = DenoiseDiffusion(
-            eps_model=eps_model,
-            n_steps=args.n_steps,
-            device=args.device,
-        )
+        eps_model=eps_model,
+        n_steps=args.n_steps,
+        device=args.device,
+    )
 
     trainer = Trainer(args, eps_model, diffusion_model)
 
@@ -242,7 +219,7 @@ def experiment2(training=True):
     else:
         trainer.load_model(args.MODEL_PATH)
 
-    return trainer
+    return trainer.eps_model, trainer.optimizer
 
 if __name__ == "__main__":
     experiment2()

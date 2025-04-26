@@ -1,64 +1,34 @@
 from __future__ import print_function
-import argparse
+import os
+import json
 import torch
 import torch.utils.data
 from torch import nn, optim
 from torch.nn import functional as F
 from torchvision import datasets, transforms
-from torchvision.utils import save_image
-from q1_vae import *
+from types import SimpleNamespace
+from q1_vae import log_likelihood_bernoulli, kl_gaussian_gaussian_analytic
 
-parser = argparse.ArgumentParser(description='VAE MNIST Example')
-parser.add_argument('--batch-size', type=int, default=128, metavar='N',
-                    help='input batch size for training (default: 128)')
-parser.add_argument('--epochs', type=int, default=20, metavar='N',
-                    help='number of epochs to train (default: 10)')
-parser.add_argument('--no-cuda', action='store_true', default=False,
-                    help='disables CUDA training')
-parser.add_argument('--no-mps', action='store_true', default=False,
-                        help='disables macOS GPU training')
-parser.add_argument('--seed', type=int, default=1, metavar='S',
-                    help='random seed (default: 1)')
-parser.add_argument('--log-interval', type=int, default=10, metavar='N',
-                    help='how many batches to wait before logging training status')
-args = parser.parse_args()
-args.cuda = not args.no_cuda and torch.cuda.is_available()
-
-torch.manual_seed(args.seed)
-
-if args.cuda:
-    device = torch.device("cuda")
-else:
-    device = torch.device("cpu")
-
-kwargs = {'num_workers': 1, 'pin_memory': True} if args.cuda else {}
-train_loader = torch.utils.data.DataLoader(
-    datasets.MNIST('../data', train=True, download=True,
-                   transform=transforms.ToTensor()),
-    batch_size=args.batch_size, shuffle=True, **kwargs)
-test_loader = torch.utils.data.DataLoader(
-    datasets.MNIST('../data', train=False, transform=transforms.ToTensor()),
-    batch_size=args.batch_size, shuffle=False, **kwargs)
-
-
+# -------------------------------------------------------------------
+# VAE definition (unchanged)
+# -------------------------------------------------------------------
 class VAE(nn.Module):
     def __init__(self):
-        super(VAE, self).__init__()
-
-        self.fc1 = nn.Linear(784, 400)
-        self.fc21 = nn.Linear(400, 20)
-        self.fc22 = nn.Linear(400, 20)
-        self.fc3 = nn.Linear(20, 400)
-        self.fc4 = nn.Linear(400, 784)
+        super().__init__()
+        self.fc1   = nn.Linear(784, 400)
+        self.fc21  = nn.Linear(400, 20)
+        self.fc22  = nn.Linear(400, 20)
+        self.fc3   = nn.Linear(20, 400)
+        self.fc4   = nn.Linear(400, 784)
 
     def encode(self, x):
         h1 = F.relu(self.fc1(x))
         return self.fc21(h1), self.fc22(h1)
 
     def reparameterize(self, mu, logvar):
-        std = torch.exp(0.5*logvar)
+        std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
-        return mu + eps*std
+        return mu + eps * std
 
     def decode(self, z):
         h3 = F.relu(self.fc3(z))
@@ -66,49 +36,125 @@ class VAE(nn.Module):
 
     def forward(self, x):
         mu, logvar = self.encode(x.view(-1, 784))
-        z = self.reparameterize(mu, logvar)
+        z          = self.reparameterize(mu, logvar)
         return self.decode(z), mu, logvar
 
-
-model = VAE().to(device)
-optimizer = optim.Adam(model.parameters(), lr=1e-3)
-
+# -------------------------------------------------------------------
+# ELBO loss (unchanged)
+# -------------------------------------------------------------------
 def loss_function(recon_x, x, mu, logvar):
-    reconstruction_loss = -log_likelihood_bernoulli(
-        recon_x,
-        x.flatten(1,3)).sum()
-    kl = kl_gaussian_gaussian_analytic(
-        mu_q=mu, 
-        logvar_q=logvar, 
-        mu_p=torch.zeros_like(mu), 
-        logvar_p=torch.zeros_like(logvar)).sum()
-    return reconstruction_loss + kl
+    rec = -log_likelihood_bernoulli(recon_x, x.flatten(1, 3)).sum()
+    kl  = kl_gaussian_gaussian_analytic(
+        mu_q=mu,
+        logvar_q=logvar,
+        mu_p=torch.zeros_like(mu),
+        logvar_p=torch.zeros_like(logvar),
+    ).sum()
+    return rec + kl
 
-def train(epoch):
+# -------------------------------------------------------------------
+# One epoch of training
+# -------------------------------------------------------------------
+def train_epoch(model, loader, optimizer, device):
     model.train()
-    train_loss = 0
-    for batch_idx, (data, _) in enumerate(train_loader):
+    total = 0.0
+    for data, _ in loader:
         data = data.to(device)
         optimizer.zero_grad()
-        recon_batch, mu, logvar = model(data)
-        loss = loss_function(recon_batch, data, mu, logvar)
+        recon, mu, logvar = model(data)
+        loss = loss_function(recon, data, mu, logvar)
         loss.backward()
-        train_loss += loss.item()
         optimizer.step()
-        if batch_idx % args.log_interval == 0:
-            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, batch_idx * len(data), len(train_loader.dataset),
-                100. * batch_idx / len(train_loader),
-                loss.item() / len(data)))
+        total += loss.item()
+    return total / len(loader.dataset)
 
-    print('====> Epoch: {} Average loss: {:.4f}'.format(
-          epoch, train_loss / len(train_loader.dataset)))
+# -------------------------------------------------------------------
+# One epoch of validation
+# -------------------------------------------------------------------
+def validate_epoch(model, loader, device):
+    model.eval()
+    total = 0.0
+    with torch.no_grad():
+        for data, _ in loader:
+            data = data.to(device)
+            recon, mu, logvar = model(data)
+            loss = loss_function(recon, data, mu, logvar)
+            total += loss.item()
+    return total / len(loader.dataset)
 
-def experiment1():
+# -------------------------------------------------------------------
+# Main experiment
+# -------------------------------------------------------------------
+def experiment1(train: bool = True):
+    # Defaults + new save_interval
+    args = SimpleNamespace(
+        batch_size    = 128,
+        epochs        = 20,
+        seed          = 1,
+        log_interval  = 10,
+        no_cuda       = False,
+        results_dir   = 'results/experiment1',
+        save_interval = 5,   # save every 5 epochs by default
+    )
+    args.cuda = not args.no_cuda and torch.cuda.is_available()
+
+    torch.manual_seed(args.seed)
+    device = torch.device("cuda" if args.cuda else "cpu")
+    os.makedirs(args.results_dir, exist_ok=True)
+
+    # Data loaders
+    loader_kwargs = {'num_workers':1, 'pin_memory':True} if args.cuda else {}
+    train_loader = torch.utils.data.DataLoader(
+        datasets.MNIST('../data', train=True, download=True, transform=transforms.ToTensor()),
+        batch_size=args.batch_size, shuffle=True, **loader_kwargs)
+    val_loader = torch.utils.data.DataLoader(
+        datasets.MNIST('../data', train=False, transform=transforms.ToTensor()),
+        batch_size=args.batch_size, shuffle=False, **loader_kwargs)
+
+    # Model & optimizer
+    model     = VAE().to(device)
+    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+
+    # If not training: load the last checkpoint and return
+    if not train:
+        ckpt_path = os.path.join(args.results_dir, f'checkpoint_epoch_{args.epochs}.pt')
+        if not os.path.isfile(ckpt_path):
+            raise FileNotFoundError(f"No checkpoint found at {ckpt_path}")
+        checkpoint = torch.load(ckpt_path, map_location=device)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        print(f"Loaded checkpoint from epoch {checkpoint['epoch']}")
+        return model, optimizer
+
+    # --- training branch ---
+    history = {'train_loss': [], 'val_loss': []}
     for epoch in range(1, args.epochs + 1):
-        train(epoch)
+        tr = train_epoch(model, train_loader, optimizer, device)
+        va = validate_epoch(model, val_loader, device)
+        history['train_loss'].append(tr)
+        history['val_loss'].append(va)
 
-    torch.save(model, 'results/experiment1/model.pt')
+        print(f"Epoch {epoch}/{args.epochs}  train_loss={tr:.4f}  val_loss={va:.4f}")
+
+        # save history
+        with open(os.path.join(args.results_dir, 'history.json'), 'w') as fp:
+            json.dump(history, fp, indent=4)
+
+        # checkpoint at interval
+        if epoch % args.save_interval == 0 or epoch == args.epochs:
+            ckpt = {
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict()
+            }
+            path = os.path.join(args.results_dir, f'checkpoint_epoch_{epoch}.pt')
+            torch.save(ckpt, path)
+            print(f"Saved checkpoint: {path}")
+
+    return model, optimizer
 
 if __name__ == "__main__":
-    experiment1()
+    # To train:
+    model, optimizer = experiment1(train=True)
+    # To load instead of training:
+    # model, optimizer = experiment1(train=False)
