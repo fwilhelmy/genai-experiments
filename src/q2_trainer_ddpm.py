@@ -182,7 +182,10 @@ class Trainer:
         steps_to_show: Sequence[int] = (0, 999),
         n_steps: Optional[int] = None,
         set_seed: bool = False,
-    ) -> List[np.ndarray]:
+        *,
+        file_path: str | None = None,
+        show: bool = False,
+    ) -> list[np.ndarray]:
         """
         Run reverse diffusion, capture snapshots at given timesteps, and plot a grid.
 
@@ -190,20 +193,28 @@ class Trainer:
 
         Returns:
             List of arrays shaped (n_samples, 1, img_size, img_size), in order of sorted steps_to_show.
+
+        Args:
+            n_samples   (int): number of sample chains.
+            img_size    (int): height/width of each square image.
+            steps_to_show (Sequence[int]): timesteps at which to capture snapshots.
+            n_steps     (int|None): total diffusion steps (defaults to self.args.n_steps).
+            set_seed    (bool): whether to fix the RNG seed (42).
+            file_path   (str|None): path to save the plotted grid (e.g. "grid.png").  
+                                If None, no file is written.
+            show        (bool): whether to display the plot with plt.show().
         """
         if set_seed:
             torch.manual_seed(42)
 
         total_steps = n_steps if n_steps is not None else self.args.n_steps
-        # keep only valid, unique timesteps
         valid_steps = sorted({t for t in steps_to_show if 0 <= t < total_steps}, reverse=True)
         if not valid_steps:
             raise ValueError(f"No valid timesteps in [0, {total_steps}): {steps_to_show!r}")
 
-        # start from pure noise x_T
+        # 1) generate noise and run reverse diffusion, capturing snapshots
         with torch.no_grad():
             x = torch.randn(n_samples, 1, img_size, img_size, device=self.args.device)
-
             snapshots: dict[int, torch.Tensor] = {}
             for t in reversed(range(total_steps)):
                 timesteps = torch.full((n_samples,), t, device=self.args.device, dtype=torch.long)
@@ -211,10 +222,10 @@ class Trainer:
                 if t in valid_steps:
                     snapshots[t] = x.cpu()
 
-        # assemble numpy arrays in sorted order
-        images: List[np.ndarray] = [snapshots[t].numpy() for t in valid_steps]
+        # 2) assemble numpy arrays in sorted order
+        images = [snapshots[t].numpy() for t in valid_steps]
 
-        # plot grid
+        # 3) plot grid
         cols = len(images)
         fig, axes = plt.subplots(
             n_samples, cols,
@@ -230,9 +241,19 @@ class Trainer:
                     ax.set_title(f"t={t}", fontsize=10)
 
         plt.tight_layout()
-        plt.show()
+
+        # 4) save if requested
+        if file_path:
+            fig.savefig(file_path, bbox_inches="tight")
+
+        # 5) show if requested
+        if show:
+            plt.show()
+
+        plt.close(fig)
 
         return images
+
 
 
     def save_history(self):
