@@ -106,7 +106,6 @@ def plot_loss(history_path: str, save_path: str = None, show: bool = False):
 
     ax.set_xlabel('Epoch')
     ax.set_ylabel('Loss')
-    ax.set_title('Training & Validation Loss')
     ax.grid(True, linestyle='--', alpha=0.5)
     ax.legend()
 
@@ -178,18 +177,18 @@ def generate_latent_traversals(
 def plot_traversals(
     traversals: torch.Tensor,
     eps: float,
-    figsize: Tuple[float, float] = (4.8, 20),
+    figsize: Tuple[float, float] = (4.8, 10),
     save_path: Optional[str] = None,
     show: bool = True,
 ):
     """
-    Plot a grid of latent traversals.
+    Plot latent traversals in groups of 10 dimensions per figure.
 
     Args:
         traversals: (n_factors, n_steps, 1, H, W) tensor.
         eps:        offset magnitude (for title).
-        figsize:    figure size.
-        save_path:  if given, saves the figure to this file.
+        figsize:    base figure size (height will scale with up to 10 rows).
+        save_path:  if given, base filepath – '_partX' will be appended.
         show:       if True, calls plt.show().
     """
     n_factors, n_steps, _, H, W = traversals.shape
@@ -197,42 +196,136 @@ def plot_traversals(
     mid_x = (W - 1) / 2
     mid_y = (H - 1) / 2
 
-    fig, axes = plt.subplots(
-        n_factors, n_steps,
-        figsize=figsize,
-        gridspec_kw={'wspace': 0},
-        squeeze=False
-    )
+    # iterate in blocks of 10 latent dims
+    for block_start in range(0, n_factors, 10):
+        block_end = min(block_start + 10, n_factors)
+        block_size = block_end - block_start
 
-    fig.suptitle(f'Latent Traversals (ε = {eps})', fontsize=16, y=1.02)
-    fig.supylabel('Latent Space', x=0.0, fontsize=12)
+        fig, axes = plt.subplots(
+            block_size, n_steps,
+            figsize=figsize,
+            gridspec_kw={'wspace': 0},
+            squeeze=False
+        )
 
-    for i in range(n_factors):
-        for k in range(n_steps):
-            ax = axes[i, k]
-            ax.imshow(traversals[i, k, 0], cmap='gray', vmin=0, vmax=1)
-            ax.set_xticks([])
-            ax.set_yticks([])
+        for row_idx, i in enumerate(range(block_start, block_end)):
+            for k in range(n_steps):
+                ax = axes[row_idx, k]
+                ax.imshow(traversals[i, k, 0], cmap='gray', vmin=0, vmax=1)
+                ax.set_xticks([])
+                ax.set_yticks([])
 
-            # Top row: x-tick label = offset
-            if i == 0:
-                ax.xaxis.set_ticks([mid_x])
-                ax.xaxis.set_ticklabels([f'{k - center:+d}ε'], fontsize=10)
-                ax.xaxis.tick_top()
-                ax.tick_params(axis='x', length=0)
+                # Top row: x-tick label = offset
+                if row_idx == 0:
+                    ax.xaxis.set_ticks([mid_x])
+                    ax.xaxis.set_ticklabels([f'{k - center:+d}ε'], fontsize=10)
+                    ax.xaxis.tick_top()
+                    ax.tick_params(axis='x', length=0)
 
-            # First col: y-tick label = latent index
-            if k == 0:
-                ax.yaxis.set_ticks([mid_y])
-                ax.yaxis.set_ticklabels([f'z[{i}]'], fontsize=10, rotation=90, va='center')
-                ax.tick_params(axis='y', length=0)
+                # First col: y-tick label = latent index
+                if k == 0:
+                    ax.yaxis.set_ticks([mid_y])
+                    ax.yaxis.set_ticklabels([f'z[{i}]'], fontsize=10, rotation=90, va='center')
+                    ax.tick_params(axis='y', length=0)
+
+        plt.tight_layout()
+
+        if save_path:
+            # append block index to filename before extension
+            base, ext = os.path.splitext(save_path)
+            part_path = f"{base}_part{block_start//10}{ext}"
+            os.makedirs(os.path.dirname(part_path), exist_ok=True)
+            fig.savefig(part_path, bbox_inches='tight')
+
+        if show:
+            plt.show()
+
+        plt.close(fig)
+
+import torch
+import matplotlib.pyplot as plt
+from typing import Optional, Tuple
+
+def plot_interpolation_comparison(
+    model: torch.nn.Module,
+    endpoints: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+    num_steps: int = 11,
+    device: Optional[torch.device] = None,
+    figsize: tuple = (12, 3),
+    save_path: Optional[str] = None,
+    show: bool = True
+):
+    """
+    Compare latent-space vs. data-space interpolation between two images.
+
+    Args:
+        model      : trained VAE with .encode(x)->(mu,logvar) and .decode(z)->flattened image.
+        endpoints  : tuple (x0, x1) of endpoint images [1,1,28,28]; if None, samples z0,z1~N(0,I) & decodes them.
+        num_steps  : number of α values (default 11 for α=0,0.1,...,1).
+        device     : torch device; inferred from model if None.
+        figsize    : (width,height) for the overall figure.
+        save_path  : where to save the final plot (optional).
+        show       : whether to call plt.show().
+    """
+    model.eval()
+    device = device or next(model.parameters()).device
+    model.to(device)
+
+    # latent dimensionality
+    latent_dim = model.fc21.out_features
+
+    # Unpack or sample endpoints
+    if endpoints is None:
+        # sample two random z's and decode
+        z0 = torch.randn(1, latent_dim, device=device)
+        z1 = torch.randn(1, latent_dim, device=device)
+        with torch.no_grad():
+            x0 = model.decode(z0).view(1,1,28,28).cpu()
+            x1 = model.decode(z1).view(1,1,28,28).cpu()
+    else:
+        x0, x1 = endpoints
+        # encode to get z0, z1
+        x0 = x0.to(device); x1 = x1.to(device)
+        flat0, flat1 = x0.view(1,-1), x1.view(1,-1)
+        with torch.no_grad():
+            mu0, logvar0 = model.encode(flat0)
+            mu1, logvar1 = model.encode(flat1)
+            z0 = model.reparameterize(mu0, logvar0)
+            z1 = model.reparameterize(mu1, logvar1)
+        # keep CPU copies for pixel interp
+        x0, x1 = x0.cpu(), x1.cpu()
+
+    # interpolation weights
+    alphas = torch.linspace(0, 1, steps=num_steps, device=device)
+
+    # latent-space decode
+    lat_images = []
+    for α in alphas:
+        z = α*z0 + (1-α)*z1
+        with torch.no_grad():
+            img = model.decode(z).view(1,1,28,28).cpu()
+        lat_images.append(img)
+    lat_images = torch.cat(lat_images, dim=0)
+
+    # pixel-space mix
+    data_images = []
+    for α in alphas:
+        img = α*x0 + (1-α)*x1
+        data_images.append(img)
+    data_images = torch.cat(data_images, dim=0)
+
+    # plot
+    fig, axes = plt.subplots(2, num_steps, figsize=figsize, squeeze=False)
+    for i in range(num_steps):
+        axes[0,i].imshow(lat_images[i,0], cmap='gray', vmin=0, vmax=1)
+        axes[0,i].axis('off')
+        axes[1,i].imshow(data_images[i,0], cmap='gray', vmin=0, vmax=1)
+        axes[1,i].axis('off')
+        axes[0,i].set_title(f"α={alphas[i]:.1f}", fontsize=8)
 
     plt.tight_layout()
     if save_path:
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        fig.savefig(save_path, bbox_inches='tight')
-
+        plt.savefig(save_path, bbox_inches='tight')
     if show:
         plt.show()
-
     plt.close(fig)
