@@ -6,6 +6,10 @@ from tqdm import tqdm
 from torch.amp import GradScaler, autocast
 import copy
 import torch.nn.functional as F
+from typing import List, Optional, Sequence
+import numpy as np
+import torch
+import matplotlib.pyplot as plt
 
 from ddpm_utils.args import args
 from ddpm_utils.dataset import MNISTDataset
@@ -171,19 +175,65 @@ class Trainer:
             plt.show()
         plt.close(fig)
 
-    def generate_intermediate_samples(self, n_samples=4, img_size=32, steps_to_show=[0,999], n_steps=None, set_seed=False):
+    def generate_intermediate_samples(
+        self,
+        n_samples: int = 4,
+        img_size: int = 32,
+        steps_to_show: Sequence[int] = (0, 999),
+        n_steps: Optional[int] = None,
+        set_seed: bool = False,
+    ) -> List[np.ndarray]:
+        """
+        Run reverse diffusion, capture snapshots at given timesteps, and plot a grid.
+
+        Rows = sample chains; Columns = timesteps in steps_to_show.
+
+        Returns:
+            List of arrays shaped (n_samples, 1, img_size, img_size), in order of sorted steps_to_show.
+        """
         if set_seed:
             torch.manual_seed(42)
-        if n_steps is None:
-            n_steps = args.n_steps
-        x = torch.randn(n_samples, 1, img_size, img_size, device=args.device, requires_grad=False)
-        images = [x.detach().cpu().numpy()]
-        for step in tqdm(range(1, n_steps-1), desc="Sampling"):
-            t = torch.full((n_samples,), step, device=self.args.device, dtype=torch.long)
-            x = self.diffusion.p_sample(x, t)
-            if step in steps_to_show:
-                images.append(x.detach().cpu().numpy())
+
+        total_steps = n_steps if n_steps is not None else self.args.n_steps
+        # keep only valid, unique timesteps
+        valid_steps = sorted({t for t in steps_to_show if 0 <= t < total_steps}, reverse=True)
+        if not valid_steps:
+            raise ValueError(f"No valid timesteps in [0, {total_steps}): {steps_to_show!r}")
+
+        # start from pure noise x_T
+        with torch.no_grad():
+            x = torch.randn(n_samples, 1, img_size, img_size, device=self.args.device)
+
+            snapshots: dict[int, torch.Tensor] = {}
+            for t in reversed(range(total_steps)):
+                timesteps = torch.full((n_samples,), t, device=self.args.device, dtype=torch.long)
+                x = self.diffusion.p_sample(x, timesteps)
+                if t in valid_steps:
+                    snapshots[t] = x.cpu()
+
+        # assemble numpy arrays in sorted order
+        images: List[np.ndarray] = [snapshots[t].numpy() for t in valid_steps]
+
+        # plot grid
+        cols = len(images)
+        fig, axes = plt.subplots(
+            n_samples, cols,
+            figsize=(cols * 2, n_samples * 2),
+            squeeze=False
+        )
+        for i in range(n_samples):
+            for j, t in enumerate(valid_steps):
+                ax = axes[i][j]
+                ax.imshow(images[j][i].squeeze(), cmap="gray")
+                ax.axis("off")
+                if i == 0:
+                    ax.set_title(f"t={t}", fontsize=10)
+
+        plt.tight_layout()
+        plt.show()
+
         return images
+
 
     def save_history(self):
         """Save full training loss history once, at the end."""
