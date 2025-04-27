@@ -4,38 +4,42 @@ import matplotlib.pyplot as plt
 from q2_trainer_ddpm import experiment2
 
 def plot_samples_across_epochs(
-    epochs=[5, 10, 15, 20],
-    n_samples=None,
-    n_steps=None,
-    seed=None,
-    figsize_per_sample=(2, 2)
+    epochs: list[int] = [5, 10, 15, 20],
+    n_samples: int | None = None,
+    n_steps: int | None = None,
+    seed: int | None = None,
+    figsize_per_sample: tuple = (2, 2),
+    *,
+    file_path: str | None = None,
+    show: bool = False,
 ):
     """
     For each epoch in `epochs`, loads the DDPM checkpoint, draws `n_samples`
-    with `n_steps` diffusion steps, and displays them in a grid:
+    with `n_steps` diffusion steps, and lays them out in a grid:
       • cols ← epochs
       • rows ← sample index
 
     Args:
-        epochs (list of int): which epochs to load.
-        n_samples (int, optional): how many images per epoch.
-            Defaults to trainer.args.n_samples.
-        n_steps (int, optional): how many diffusion steps when sampling.
-            Defaults to trainer.args.n_steps.
-        seed (int, optional): torch.manual_seed for reproducibility.
-        figsize_per_sample (tuple): (width, height) in inches per image cell.
+        epochs (list[int]): which epochs to load.
+        n_samples (int|None): images per epoch; defaults to trainer.args.n_samples.
+        n_steps (int|None): diffusion steps per sample; defaults to trainer.args.n_steps.
+        seed (int|None): seed for torch.manual_seed.
+        figsize_per_sample (tuple): (width, height) in inches per cell.
+        file_path (str|None): if set, path to save the figure (PNG, PDF, etc.).
+        show (bool): if True, displays the plot with plt.show().
     """
+    # optional reproducibility
     if seed is not None:
         torch.manual_seed(seed)
 
-    # 1) Instantiate trainers and infer defaults
+    # instantiate trainers & defaults
     trainers = [experiment2(train=False, checkpoint_epoch=ep) for ep in epochs]
     if n_samples is None:
         n_samples = trainers[0].args.n_samples
     if n_steps is None:
         n_steps = trainers[0].args.n_steps
 
-    # 2) Collect samples for each epoch
+    # collect samples
     all_samples = []
     for trainer in trainers:
         imgs = trainer.sample(
@@ -44,10 +48,10 @@ def plot_samples_across_epochs(
             set_seed=False,
             show=False,
             save=False
-        )  # returns Tensor [n_samples, C, H, W]
-        all_samples.append(imgs.cpu())
+        ).cpu()  # [n_samples, C, H, W]
+        all_samples.append(imgs)
 
-    # 3) Build the plot grid
+    # build grid
     cols = len(epochs)
     rows = n_samples
     fig, axes = plt.subplots(
@@ -67,4 +71,14 @@ def plot_samples_across_epochs(
                 ax.set_title(f"Epoch {epoch}", fontsize=12)
 
     plt.tight_layout()
-    plt.show()
+
+    # save if requested
+    if file_path:
+        fig.savefig(file_path, bbox_inches="tight")
+        plt.close(fig)
+
+    # show if requested
+    if show:
+        plt.show()
+
+    plt.close(fig)  # prevent double-display if show=False

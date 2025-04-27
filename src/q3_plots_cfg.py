@@ -3,10 +3,13 @@ import matplotlib.pyplot as plt
 from q3_trainer_cfg import experiment3
 
 def plot_evolution_across_epochs(
-    epochs=[5, 10, 15, 20],
-    n_steps=None,
-    labels: torch.Tensor = None,
-    seed=42,
+    epochs: list[int] = [5, 10, 15, 20],
+    n_steps: int | None = None,
+    labels: torch.Tensor | None = None,
+    seed: int = 42,
+    *,
+    file_path: str | None = None,
+    show: bool = False,
 ):
     """
     Samples the CFG diffusion model at specific epochs and plots the results.
@@ -14,13 +17,16 @@ def plot_evolution_across_epochs(
     Columns → epochs; Rows → fixed labels.
 
     Args:
-        epochs   (list[int]): which checkpoint epochs to load & sample.
-        n_steps   (int|None): number of reverse diffusion steps to use.
-                             If None, uses trainer.args.n_steps.
-        labels    (torch.Tensor|None): tensor of shape (n_samples,) with labels [0–9].
-                             If None, will sample uniformly at random once,
-                             using trainer.args.n_samples as length.
-        seed      (int): RNG seed for reproducibility of labels and sampling.
+        epochs      (list[int]): which checkpoint epochs to load & sample.
+        n_steps     (int|None): number of reverse diffusion steps to use.
+                               If None, uses trainer.args.n_steps.
+        labels      (torch.Tensor|None): tensor of shape (n_samples,) with labels [0–9].
+                               If None, will sample uniformly at random once,
+                               using trainer.args.n_samples as length.
+        seed        (int): RNG seed for reproducibility of labels and sampling.
+        file_path   (str|None): path to save the final figure (PNG, PDF, etc.).  
+                               If None, no file is written.
+        show        (bool): whether to display the plot interactively.
     """
     # 1) Fix RNG
     torch.manual_seed(seed)
@@ -39,9 +45,8 @@ def plot_evolution_across_epochs(
         n = labels.numel()
         assert labels.dim() == 1, "labels must be a 1-D tensor"
     
-    all_samples = []
+    all_samples: list[torch.Tensor] = []
     for ep in epochs:
-        # load model at epoch `ep`
         trainer = experiment3(train=False, checkpoint_epoch=ep)
         trainer.args.n_samples = n
 
@@ -73,4 +78,14 @@ def plot_evolution_across_epochs(
                 ax.set_ylabel(f'Label {labels[row].item()}', rotation=90, va='center')
 
     plt.tight_layout()
-    plt.show()
+
+    # 5) Save if requested
+    if file_path:
+        fig.savefig(file_path, bbox_inches='tight')
+        plt.close(fig)  # prevent double-display if show=False
+
+    # 6) Show if requested
+    if show:
+        plt.show()
+
+    plt.close(fig)  # prevent double-display if show=False
