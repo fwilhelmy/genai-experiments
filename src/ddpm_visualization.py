@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import matplotlib.pyplot as plt
-from q2_trainer_ddpm import experiment2
+from ddpm_training import experiment2
 
 def plot_samples_across_epochs(
     epochs: list[int] = [5, 10, 15, 20],

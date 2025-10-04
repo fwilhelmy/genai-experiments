@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 from ddpm_utils.args import args
 from ddpm_utils.dataset import MNISTDataset
 from ddpm_utils.unet import UNet, load_weights
-from q2_ddpm import DenoiseDiffusion
+from ddpm_core import DenoiseDiffusion
 
 # ensure all outputs go under results/experiment2
 RESULTS_DIR = "results/experiment2"

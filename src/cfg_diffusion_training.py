@@ -8,7 +8,7 @@ from torch.amp import GradScaler, autocast
 from cfg_utils.args import *
 from cfg_utils.dataset import *
 from cfg_utils.unet import *
-from q3_cfg_diffusion import CFGDiffusion
+from cfg_diffusion_core import CFGDiffusion
 
 import numpy as np 
 import copy 
