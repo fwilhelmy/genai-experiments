@@ -1,13 +1,14 @@
-This is the official github for the Winter 2025 IFT6135 lecture assignement 3. Please refer to the associated instructions on Piazza.  
-You are asked to complete the following files:
-- Question 1: Variational AutoEncoders:
-  - q1_vae.py
-  - q1_train_vae.py
-- Question 2: Denoising Diffusion Probabilistic Models
-  - q2_ddpm.py
-  - q2_trainer_ddpm.py
-- Question 3: Classifier Free Guidance 
-  - q2_cfg_diffusion.py
-  - q2_trainer_cfg.py
+This repository gathers code and learning materials for hands-on experiments with modern generative modeling techniques, spanning variational autoencoders, diffusion models, and classifier-free guidance workflows. I, Felix Wilhelmy, maintain the collection and continue to iterate on the implementations.
 
-For each question, you can also use the associated notebooks, especially if you want require GPU from Google Collab. 
+## Repository overview
+
+- `src/`: Core Python packages that implement the training loops, model definitions, and utility scripts for the experiments (including the VAE, DDPM, and classifier-free guidance components).
+- `notebooks/`: Jupyter notebooks that mirror the scripted pipelines and offer interactive walkthroughs, along with supporting figures stored in `notebooks/images/`.
+- `Practical_HW__3.pdf`: Supplementary documentation outlining the experimental objectives, grading guidelines, and background reading.
+- `requirements.txt`: Python dependencies required to execute the scripts and notebooks.
+
+For interactive experimentation I work either through the notebooks or the modular scripts, depending on workflow preferences and hardware access.
+
+## Credits
+
+Special thanks to Prof. Aaron Courville for guiding the overall direction of these materials. The original lab assistant scaffold came from Phil, whose starter code I then heavily modified throughout the repository.
