@@ -11,4 +11,4 @@ For interactive experimentation I work either through the notebooks or the modul
 
 ## Credits
 
-Special thanks to Prof. Aaron Courville for guiding the overall direction of these materials. The original lab assistant scaffold came from Phil, whose starter code I then heavily modified throughout the repository.
+Special thanks to Prof. Aaron Courville for guiding the overall direction of these materials. The original lab assistant scaffold came from Philippe Martin, whose starter code I then heavily modified throughout the repository, with additional support from Vitória Barin Pacela.
