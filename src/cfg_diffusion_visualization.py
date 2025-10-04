@@ -1,6 +1,6 @@
 import torch
 import matplotlib.pyplot as plt
-from q3_trainer_cfg import experiment3
+from cfg_diffusion_training import experiment3
 
 def plot_evolution_across_epochs(
     epochs: list[int] = [5, 10, 15, 20],

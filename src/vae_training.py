@@ -7,7 +7,7 @@ from torch import nn, optim
 from torch.nn import functional as F
 from torchvision import datasets, transforms
 from types import SimpleNamespace
-from q1_vae import log_likelihood_bernoulli, kl_gaussian_gaussian_analytic
+from vae_objectives import log_likelihood_bernoulli, kl_gaussian_gaussian_analytic
 import json
 import os
 import matplotlib.pyplot as plt
